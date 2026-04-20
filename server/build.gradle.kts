@@ -1,24 +1,25 @@
 plugins {
-    kotlin("jvm") version "1.9.22"
-    id("io.ktor.plugin") version "2.3.7"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.ktor)
+    application
 }
 
 group = "com.example"
 version = "1.0-SNAPSHOT"
 
-repositories {
-    mavenCentral()
+application {
+    mainClass.set("com.example.fichacorte.ApplicationKt")
 }
 
 dependencies {
-    implementation("io.ktor:ktor-server-core-jvm:2.3.7")
-    implementation("io.ktor:ktor-server-netty-jvm:2.3.7")
-    implementation("io.ktor:ktor-server-html-builder-jvm:2.3.7")
-    implementation("ch.qos.logback:logback-classic:1.4.14")
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.html.builder)
+    implementation(libs.logback)
 }
 
 ktor {
-    fatJar {
-        archiveFileName.set("fichacorte-server.jar")
+    application {
+        mainClass.set("com.example.fichacorte.ApplicationKt")
     }
 }
