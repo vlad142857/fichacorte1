@@ -17,9 +17,3 @@ dependencies {
     implementation(libs.ktor.server.html.builder)
     implementation(libs.logback)
 }
-
-ktor {
-    application {
-        mainClass.set("com.example.fichacorte.ApplicationKt")
-    }
-}
