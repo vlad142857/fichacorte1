@@ -8,10 +8,35 @@ import io.ktor.server.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.plugins.contentnegotiation.*
 import kotlinx.html.*
-import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.serialization.Serializable
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.SchemaUtils
 
-// Modelo de dados atualizado
+// Definição da Tabela no Banco de Dados
+object FichasTable : Table("fichas") {
+    val id = integer("id").autoIncrement()
+    val referencia = varchar("referencia", 50)
+    val cliente = varchar("cliente", 100)
+    val tecido = varchar("tecido", 100)
+    val cor = varchar("cor", 50)
+    val p = integer("p")
+    val m = integer("m")
+    val g = integer("g")
+    val gg = integer("gg")
+    val folhas = integer("folhas")
+    val metragem = varchar("metragem", 20)
+    val observacoes = text("observacoes")
+    val status = varchar("status", 20).default("No Corte")
+    
+    override val primaryKey = PrimaryKey(id)
+}
+
+@Serializable
 data class FichaCorte(
     val id: Int,
     val referencia: String,
@@ -25,21 +50,54 @@ data class FichaCorte(
     val folhas: Int,
     val metragem: String,
     val observacoes: String,
-    var status: String = "No Corte" // Agora é var para podermos mudar
+    var status: String
 )
 
-val database = CopyOnWriteArrayList<FichaCorte>()
-var nextId = 1
-
 fun main() {
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
+    Database.connect("jdbc:h2:./fichacorte_db;DB_CLOSE_DELAY=-1;", driver = "org.h2.Driver")
+    transaction {
+        SchemaUtils.create(FichasTable)
+    }
+
+    val port = System.getenv("PORT")?.toInt() ?: 8080
+    embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
 }
 
 fun Application.module() {
+    install(ContentNegotiation) {
+        json()
+    }
+
     routing {
-        // Página Inicial
+        get("/api/fichas") {
+            val fichas = transaction {
+                FichasTable.selectAll().map {
+                    FichaCorte(
+                        it[FichasTable.id], it[FichasTable.referencia], it[FichasTable.cliente],
+                        it[FichasTable.tecido], it[FichasTable.cor], it[FichasTable.p],
+                        it[FichasTable.m], it[FichasTable.g], it[FichasTable.gg],
+                        it[FichasTable.folhas], it[FichasTable.metragem], it[FichasTable.observacoes],
+                        it[FichasTable.status]
+                    )
+                }
+            }
+            call.respond(fichas)
+        }
+
         get("/") {
+            val fichas = transaction {
+                FichasTable.selectAll().map {
+                    FichaCorte(
+                        it[FichasTable.id], it[FichasTable.referencia], it[FichasTable.cliente],
+                        it[FichasTable.tecido], it[FichasTable.cor], it[FichasTable.p],
+                        it[FichasTable.m], it[FichasTable.g], it[FichasTable.gg],
+                        it[FichasTable.folhas], it[FichasTable.metragem], it[FichasTable.observacoes],
+                        it[FichasTable.status]
+                    )
+                }
+            }
+
             call.respondHtml {
                 head {
                     title { +"Painel Têxtil" }
@@ -83,7 +141,7 @@ fun Application.module() {
                                 }
                             }
                             tbody {
-                                database.forEach { ficha ->
+                                fichas.forEach { ficha ->
                                     tr {
                                         td { +ficha.referencia }
                                         td { +"${ficha.tecido} - ${ficha.cor}" }
@@ -97,7 +155,6 @@ fun Application.module() {
                                             span("status $sClass") { +ficha.status }
                                         }
                                         td {
-                                            // Botões para mudar status
                                             form(action = "/update-status/${ficha.id}", method = FormMethod.post, classes = "inline-form") {
                                                 style = "display: inline;"
                                                 if (ficha.status == "No Corte") {
@@ -122,10 +179,20 @@ fun Application.module() {
             }
         }
 
-        // Rota de Impressão (PDF/Imprimir)
         get("/imprimir/{id}") {
-            val id = call.parameters["id"]?.toIntOrNull()
-            val ficha = database.find { it.id == id }
+            val idParam = call.parameters["id"]?.toIntOrNull()
+            val ficha = transaction {
+                FichasTable.selectAll().where { FichasTable.id eq (idParam ?: -1) }.map {
+                    FichaCorte(
+                        it[FichasTable.id], it[FichasTable.referencia], it[FichasTable.cliente],
+                        it[FichasTable.tecido], it[FichasTable.cor], it[FichasTable.p],
+                        it[FichasTable.m], it[FichasTable.g], it[FichasTable.gg],
+                        it[FichasTable.folhas], it[FichasTable.metragem], it[FichasTable.observacoes],
+                        it[FichasTable.status]
+                    )
+                }.firstOrNull()
+            }
+
             if (ficha == null) {
                 call.respondText("Ficha não encontrada", status = HttpStatusCode.NotFound)
                 return@get
@@ -133,42 +200,29 @@ fun Application.module() {
 
             call.respondHtml {
                 head {
-                    title { +"Ficha de Corte - ${ficha.referencia}" }
+                    title { +"Ficha - ${ficha.referencia}" }
                     style {
                         +"""
-                            body { font-family: 'Segoe UI', sans-serif; padding: 40px; }
+                            body { font-family: sans-serif; padding: 40px; }
                             .print-header { border: 2px solid #000; padding: 15px; text-align: center; margin-bottom: 20px; }
-                            .data-row { display: flex; border-bottom: 1px solid #ccc; padding: 8px 0; }
-                            .label { font-weight: bold; width: 180px; }
                             .grade-box { border-collapse: collapse; width: 100%; margin-top: 20px; }
                             .grade-box th, .grade-box td { border: 1px solid #000; padding: 10px; text-align: center; }
-                            .obs { margin-top: 30px; border: 1px solid #ccc; padding: 10px; min-height: 100px; }
                             @media print { .no-print { display: none; } }
                         """.trimIndent()
                     }
                 }
                 body {
                     div("no-print") {
-                        button {
-                            attributes["onclick"] = "window.print()"
-                            +"Clique aqui para Imprimir / Salvar PDF"
-                        }
-                        a(href = "/") { +" Voltar ao sistema" }
+                        button { attributes["onclick"] = "window.print()"; +"Imprimir PDF" }
+                        a(href = "/") { +" Voltar" }
                         hr()
                     }
-                    
                     div("print-header") {
-                        h1 { +"FICHA DE CORTE - PRODUÇÃO" }
-                        p { +"Referência: ${ficha.referencia} | Data: ${java.time.LocalDate.now()}" }
+                        h1 { +"FICHA DE CORTE" }
+                        p { +"REF: ${ficha.referencia} | Data: ${java.time.LocalDate.now()}" }
                     }
-
-                    div("data-row") { div("label") { +"Cliente:" }; div { +ficha.cliente } }
-                    div("data-row") { div("label") { +"Tecido:" }; div { +ficha.tecido } }
-                    div("data-row") { div("label") { +"Cor/Variante:" }; div { +ficha.cor } }
-                    div("data-row") { div("label") { +"Nº Folhas:" }; div { +ficha.folhas.toString() } }
-                    div("data-row") { div("label") { +"Metragem:" }; div { +ficha.metragem } }
-
-                    h3 { +"GRADE DE PRODUÇÃO" }
+                    p { b { +"Cliente: " }; +ficha.cliente }
+                    p { b { +"Tecido: " }; +ficha.tecido; b { +" | Cor: " }; +ficha.cor }
                     table("grade-box") {
                         tr { th { +"P" }; th { +"M" }; th { +"G" }; th { +"GG" }; th { +"TOTAL" } }
                         tr {
@@ -179,85 +233,53 @@ fun Application.module() {
                             td { b { +(ficha.p + ficha.m + ficha.g + ficha.gg).toString() } }
                         }
                     }
-
-                    h3 { +"OBSERVAÇÕES" }
-                    div("obs") { +ficha.observacoes }
-
-                    div {
-                        style = "margin-top: 50px; display: flex; justify-content: space-around;"
-                        div { style = "border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;" { +"Ass. Cortador" } }
-                        div { style = "border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px;" { +"Ass. Responsável" } }
-                    }
+                    p { b { +"Observações: " }; +ficha.observacoes }
                 }
             }
         }
 
-        // Rota para mudar status
         post("/update-status/{id}") {
-            val id = call.parameters["id"]?.toIntOrNull()
+            val idParam = call.parameters["id"]?.toIntOrNull()
             val newStatus = call.receiveParameters()["newStatus"]
-            if (id != null && newStatus != null) {
-                database.find { it.id == id }?.status = newStatus
+            if (idParam != null && newStatus != null) {
+                transaction {
+                    FichasTable.update({ FichasTable.id eq idParam }) {
+                        it[status] = newStatus
+                    }
+                }
             }
             call.respondRedirect("/")
         }
 
-        // Rota para Salvar e Outros (mantidos como antes)
         get("/nova-ficha") {
             call.respondHtml {
                 head {
-                    title { +"Nova Ficha de Corte" }
+                    title { +"Nova Ficha" }
                     style {
                         +"""
-                            body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; }
-                            .container { max-width: 800px; margin: 30px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-                            h1 { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-                            .section-title { font-weight: bold; color: #555; margin-top: 20px; margin-bottom: 10px; display: block; background: #e9ecef; padding: 5px 10px; }
-                            .form-group { margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px; }
-                            .field { flex: 1; min-width: 200px; }
-                            label { display: block; margin-bottom: 5px; font-weight: 500; }
-                            input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-                            .grade-table { width: 100%; margin-top: 10px; }
-                            .grade-table th { background: #f8f9fa; padding: 8px; }
-                            .grade-table input { text-align: center; }
-                            .btn-save { background: #28a745; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; width: 100%; margin-top: 20px; font-weight: bold; }
+                            body { font-family: sans-serif; background: #f0f2f5; padding: 20px; }
+                            .card { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 8px; }
+                            input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; }
+                            .btn-save { background: #28a745; color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; }
                         """.trimIndent()
                     }
                 }
                 body {
-                    div("container") {
-                        a(href = "/") { +"← Voltar ao Painel" }
-                        h1 { +"Ficha de Corte de Produção" }
+                    div("card") {
+                        h2 { +"Nova Ficha de Corte" }
                         form(action = "/save", method = FormMethod.post) {
-                            span("section-title") { +"CABEÇALHO" }
-                            div("form-group") {
-                                div("field") { label { +"REF" }; input(type = InputType.text, name = "referencia") { required = true } }
-                                div("field") { label { +"Cliente" }; input(type = InputType.text, name = "cliente") }
+                            input(type = InputType.text, name = "referencia") { placeholder = "REF"; required = true }
+                            input(type = InputType.text, name = "cliente") { placeholder = "Cliente" }
+                            input(type = InputType.text, name = "tecido") { placeholder = "Tecido" }
+                            input(type = InputType.text, name = "cor") { placeholder = "Cor" }
+                            div {
+                                style = "display: flex; gap: 10px;"
+                                input(type = InputType.number, name = "p") { value = "0"; placeholder = "P" }
+                                input(type = InputType.number, name = "m") { value = "0"; placeholder = "M" }
+                                input(type = InputType.number, name = "g") { value = "0"; placeholder = "G" }
+                                input(type = InputType.number, name = "gg") { value = "0"; placeholder = "GG" }
                             }
-                            span("section-title") { +"TECIDOS" }
-                            div("form-group") {
-                                div("field") { label { +"Tecido" }; input(type = InputType.text, name = "tecido") }
-                                div("field") { label { +"Cor" }; input(type = InputType.text, name = "cor") }
-                            }
-                            span("section-title") { +"GRADE" }
-                            div("grade-table") {
-                                table {
-                                    tr { th { +"P" }; th { +"M" }; th { +"G" }; th { +"GG" } }
-                                    tr {
-                                        td { input(type = InputType.number, name = "p") { value = "0" } }
-                                        td { input(type = InputType.number, name = "m") { value = "0" } }
-                                        td { input(type = InputType.number, name = "g") { value = "0" } }
-                                        td { input(type = InputType.number, name = "gg") { value = "0" } }
-                                    }
-                                }
-                            }
-                            span("section-title") { +"DETALHES" }
-                            div("form-group") {
-                                div("field") { label { +"Nº Folhas" }; input(type = InputType.number, name = "folhas") { value = "0" } }
-                                div("field") { label { +"Metragem" }; input(type = InputType.text, name = "metragem") }
-                            }
-                            label { +"Observações" }
-                            textArea { name = "observacoes"; attributes["rows"] = "3"; style = "width:100%" }
+                            textArea { name = "observacoes"; placeholder = "Observações" }
                             button(type = ButtonType.submit, classes = "btn-save") { +"SALVAR FICHA" }
                         }
                     }
@@ -266,21 +288,22 @@ fun Application.module() {
         }
 
         post("/save") {
-            val params = call.receiveParameters()
-            database.add(FichaCorte(
-                id = nextId++,
-                referencia = params["referencia"] ?: "",
-                cliente = params["cliente"] ?: "",
-                tecido = params["tecido"] ?: "",
-                cor = params["cor"] ?: "",
-                p = params["p"]?.toIntOrNull() ?: 0,
-                m = params["m"]?.toIntOrNull() ?: 0,
-                g = params["g"]?.toIntOrNull() ?: 0,
-                gg = params["gg"]?.toIntOrNull() ?: 0,
-                folhas = params["folhas"]?.toIntOrNull() ?: 0,
-                metragem = params["metragem"] ?: "",
-                observacoes = params["observacoes"] ?: ""
-            ))
+            val p = call.receiveParameters()
+            transaction {
+                FichasTable.insert {
+                    it[referencia] = p["referencia"] ?: ""
+                    it[cliente] = p["cliente"] ?: ""
+                    it[tecido] = p["tecido"] ?: ""
+                    it[cor] = p["cor"] ?: ""
+                    it[FichasTable.p] = p["p"]?.toIntOrNull() ?: 0
+                    it[FichasTable.m] = p["m"]?.toIntOrNull() ?: 0
+                    it[FichasTable.g] = p["g"]?.toIntOrNull() ?: 0
+                    it[FichasTable.gg] = p["gg"]?.toIntOrNull() ?: 0
+                    it[folhas] = 0
+                    it[metragem] = ""
+                    it[observacoes] = p["observacoes"] ?: ""
+                }
+            }
             call.respondRedirect("/")
         }
     }
