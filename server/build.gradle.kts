@@ -12,8 +12,8 @@ application {
     mainClass.set("com.example.fichacorte.ApplicationKt")
 }
 
-// Forma universal de configurar o Shadow JAR
-tasks.shadowJar {
+// Forma simples que funciona em qualquer nuvem
+tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     archiveFileName.set("fichacorte-server.jar")
     mergeServiceFiles()
 }

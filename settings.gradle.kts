@@ -24,8 +24,8 @@ dependencyResolutionManagement {
 
 rootProject.name = "fichacorte"
 
-// Só inclui o APP se NÃO estiver no Render/Docker
-if (System.getenv("RENDER") == null) {
+// Só inclui o APP se estivermos no seu computador local (desenvolvimento)
+if (System.getenv("CI") == null && System.getenv("RAILWAY_ENVIRONMENT") == null && System.getenv("RENDER") == null) {
     include(":app")
 }
 include(":server")
