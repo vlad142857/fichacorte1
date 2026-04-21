@@ -12,9 +12,10 @@ application {
     mainClass.set("com.example.fichacorte.ApplicationKt")
 }
 
-// Configuração para a versão 9.0+ do Shadow
-tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
+// Forma universal de configurar o Shadow JAR
+tasks.shadowJar {
     archiveFileName.set("fichacorte-server.jar")
+    mergeServiceFiles()
 }
 
 dependencies {

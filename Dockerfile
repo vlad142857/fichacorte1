@@ -1,15 +1,11 @@
-# Estágio 1: Build com Gradle 8
 FROM gradle:8.5-jdk17 AS build
-WORKDIR /app
-COPY --chown=gradle:gradle . .
-# Executa o build do JAR
+COPY --chown=gradle:gradle . /home/gradle/src
+WORKDIR /home/gradle/src
 RUN gradle :server:shadowJar --no-daemon
 
-# Estágio 2: Execução
 FROM eclipse-temurin:17-jre-jammy
-WORKDIR /app
-# Copia o JAR gerado (ajustado para o caminho padrão do shadow)
-COPY --from=build /app/server/build/libs/fichacorte-server.jar app.jar
-
 EXPOSE 8080
-CMD ["java", "-jar", "app.jar"]
+RUN mkdir /app
+COPY --from=build /home/gradle/src/server/build/libs/fichacorte-server.jar /app/fichacorte.jar
+WORKDIR /app
+CMD ["java", "-jar", "fichacorte.jar"]
