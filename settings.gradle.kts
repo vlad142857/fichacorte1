@@ -23,5 +23,9 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "fichacorte"
-include(":app")
+
+// Só inclui o APP se NÃO estiver no Render/Docker
+if (System.getenv("RENDER") == null) {
+    include(":app")
+}
 include(":server")

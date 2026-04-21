@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
 
         // Configura a conexão com o servidor (IP especial para emulador Android)
         val retrofit = Retrofit.Builder()
-            .baseUrl("http://10.0.2.2:8080/") 
+            .baseUrl("https://fichacorte-1.onrender.com/")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
 
